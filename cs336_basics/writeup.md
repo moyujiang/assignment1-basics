@@ -89,3 +89,7 @@ OWT tokenizer 在 OWT 上约 ~1.5 MB/s，用这个吞吐量粗估 Pile 825GB 时
 
 (d)
 
+选择 uint16 是因为 $[0,65535]$ 的值域覆盖 10K 和 32K 大小的 vocab 下的 token ID，同时比 uint32 节省一半的空间。
+
+
+

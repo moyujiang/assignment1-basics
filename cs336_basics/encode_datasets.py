@@ -123,7 +123,6 @@ def write_tokens_uint16(
         "n_tokens": float(n_tokens),
         "count_seconds": float(t1 - t0),
         "write_seconds": float(t3 - t2),
-        "total_seconds": float((t1 - t0) + (t3 - t2)),
         "count_MBps": (input_bytes / max(1e-9, (t1 - t0))) / 1e6,
         "write_MBps": (input_bytes / max(1e-9, (t3 - t2))) / 1e6,
         "tokens_per_second": float(n_tokens) / max(1e-9, (t3 - t2)),
@@ -131,22 +130,26 @@ def write_tokens_uint16(
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser(description="Encode TinyStories/OWT datasets to uint16 .npy token-id arrays")
+    ap = argparse.ArgumentParser(description="Encode datasets to uint16 .npy token-id arrays")
     ap.add_argument("--which", choices=["tinystories", "owt", "all"], default="all")
-    ap.add_argument("--data-dir", type=str, default="data")
+    ap.add_argument("--splits", type=str, default="train,valid", help="Comma-separated: train,valid")
     ap.add_argument("--out-dir", type=str, default="data/tokenized")
     ap.add_argument("--chunk-mb", type=int, default=4)
     ap.add_argument("--block-tokens", type=int, default=1_000_000)
     ap.add_argument("--overwrite", action="store_true")
-    ap.add_argument("--special-token", type=str, default="<|endoftext|>")
     args = ap.parse_args()
 
     root = Path(__file__).resolve().parents[1]
-    data_dir = root / args.data_dir
+    data_dir = root / "data"
     out_dir = root / args.out_dir
 
-    special_tokens = [args.special_token] if args.special_token else []
+    special_tokens = ["<|endoftext|>"]
     chunk_bytes = args.chunk_mb * (1 << 20)
+
+    splits = [s.strip() for s in args.splits.split(",") if s.strip()]
+    for s in splits:
+        if s not in ("train", "valid"):
+            raise ValueError(f"Unknown split: {s} (expected train/valid)")
 
     def run_one(name: str, tok_out_dir: Path, train_path: Path, valid_path: Path) -> None:
         tokenizer = load_tokenizer(
@@ -155,8 +158,10 @@ def main() -> None:
             special_tokens=special_tokens,
         )
 
-        for split, in_path in [("train", train_path), ("valid", valid_path)]:
-            out_path = out_dir / f"{name}_{split}_uint16.npy"
+        split_to_path = {"train": train_path, "valid": valid_path}
+        for split in splits:
+            in_path = split_to_path[split]
+            out_path = out_dir / f"{name}_{split}.uint16.npy"
             stats = write_tokens_uint16(
                 tokenizer=tokenizer,
                 input_path=in_path,
@@ -166,25 +171,12 @@ def main() -> None:
                 overwrite=args.overwrite,
             )
 
-            meta_path = out_dir / f"{name}_{split}_meta.json"
-            meta = {
-                "tokenizer": name,
-                "split": split,
-                "input_path": str(in_path),
-                "output_path": str(out_path),
-                "dtype": "uint16",
-                "vocab_size": int(len(tokenizer.vocab)),
-                "max_token_id": int(max(tokenizer.vocab.keys()) if tokenizer.vocab else 0),
-                **{k: (float(v) if isinstance(v, (int, float)) else v) for k, v in stats.items()},
-            }
-            with open(meta_path, "w", encoding="utf-8") as f:
-                json.dump(meta, f, indent=2)
-
-            print(f"[{name}:{split}] wrote {int(stats['n_tokens']):,} tokens -> {out_path}")
+            print(f"[{name}:{split}] -> {out_path}")
             print(
-                f"  count: {stats['count_seconds']:.2f}s ({stats['count_MBps']:.2f} MB/s), "
-                f"write: {stats['write_seconds']:.2f}s ({stats['write_MBps']:.2f} MB/s), "
-                f"encode: {stats['tokens_per_second']:.0f} tok/s"
+                f"  tokens={int(stats['n_tokens']):,}  "
+                f"count={stats['count_seconds']:.2f}s ({stats['count_MBps']:.2f} MB/s)  "
+                f"write={stats['write_seconds']:.2f}s ({stats['write_MBps']:.2f} MB/s)  "
+                f"encode={stats['tokens_per_second']:.0f} tok/s"
             )
 
     if args.which in ("tinystories", "all"):
