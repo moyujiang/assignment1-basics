@@ -62,9 +62,30 @@ Longest token: b'\xc3\x83\xc3\x82\xc3\x83\xc3\x82\xc3\x83\xc3\x82\xc3\x83\xc3\x8
 As string: 'ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ'
 ```
 
+(b)
 
+网络数据更难清洗，导致 owt 上的最长 token 不是有意义的单词；owt 数据集显著大于 TinyStories，这导致 merge 阶段慢很多。
 
 
 
 tokenizer_experiments：
+
+(a)
+
+TinyStories tokenizer (10K) compression ratio (bytes/token): 4.0908
+OpenWebText tokenizer (32K) compression ratio (bytes/token): 4.5357
+
+(b)
+
+OpenWebText sample with TinyStories tokenizer (bytes/token): 3.3438
+OWT token count multiplier (TinyStories vs OWT tokenizer): 1.356x
+OWT bytes/token change vs OWT tokenizer: -26.28%
+
+TinyStories 中多简短故事，用词相对简单，且 vocab 更小，对 owt 中的少见词汇、URL 模式等不能很好地匹配，被切为更多的 tokens，压缩率显著下降。
+
+(c)
+
+OWT tokenizer 在 OWT 上约 ~1.5 MB/s，用这个吞吐量粗估 Pile 825GB 时间：$t \approx \frac{825\times 10^9}{1.5\times 10^6}s\approx 6d$，约 $6$ 天。
+
+(d)
 
