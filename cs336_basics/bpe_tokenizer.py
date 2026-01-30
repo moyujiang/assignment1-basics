@@ -421,3 +421,29 @@ class BPETokenizer:
     def from_train(cls, input_path: str, vocab_size: int, special_tokens: List[str] | None = None) -> "BPETokenizer":
         vocab, merges = cls.train_bpe(input_path, vocab_size, special_tokens)
         return cls(vocab, merges, special_tokens)
+
+    def from_files(cls, vocab_filepath: str, merge_filepath: str, special_tokens: List[str] | None = None) -> "BPETokenizer":
+        """
+        Load BPE tokenizer from vocab and merges files.
+        vocab_filepath: path to vocab.json
+        merge_filepath: path to merges.txt
+        special_tokens: list of special tokens
+        """
+        # Load vocab
+        with open(vocab_filepath, "r") as f:
+            vocab_serializable = json.load(f)
+        vocab: Dict[int, bytes] = {
+            int(k): bytes(v) for k, v in vocab_serializable.items()
+        }
+
+        # Load merges
+        merges: List[Tuple[bytes, bytes]] = []
+        with open(merge_filepath, "r") as f:
+            for line in f:
+                parts = line.strip().split()
+                if len(parts) != 2:
+                    continue
+                a, b = parts
+                merges.append((a.encode("utf-8"), b.encode("utf-8")))
+
+        return cls(vocab, merges, special_tokens)

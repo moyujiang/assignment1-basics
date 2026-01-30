@@ -15,7 +15,7 @@ def main():
     data_dir = Path("../data")
     input_path = data_dir / "TinyStoriesV2-GPT4-train.txt"
     # input_path = data_dir / "TinyStoriesV2-GPT4-valid.txt"
-    output_dir = Path("./tokenizer_output")
+    output_dir = Path("./tokenizer_output_tinystories")
     output_dir.mkdir(exist_ok=True)
 
     # Configuration

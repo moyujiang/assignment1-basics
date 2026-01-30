@@ -48,7 +48,23 @@ As string: ' accomplishment'
 
 train_bpe_expts_owt：
 
-需要算力。
+(a)
+
+```
+Time taken: 12932.71 seconds (3.5924 hours)
+Pretokenize time: 525.41 seconds
+Train time: 8944.50 seconds
+Peak memory usage: 28.58 GB
+Vocabulary size: 32000
+Number of merges: 31743
+
+Longest token: b'\xc3\x83\xc3\x82\xc3\x83\xc3\x82\xc3\x83\xc3\x82\xc3\x83\xc3\x82\xc3\x83\xc3\x82\xc3\x83\xc3\x82\xc3\x83\xc3\x82\xc3\x83\xc3\x82\xc3\x83\xc3\x82\xc3\x83\xc3\x82\xc3\x83\xc3\x82\xc3\x83\xc3\x82\xc3\x83\xc3\x82\xc3\x83\xc3\x82\xc3\x83\xc3\x82\xc3\x83\xc3\x82' (64 bytes)
+As string: 'ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ'
+```
 
 
+
+
+
+tokenizer_experiments：
 
