@@ -26,6 +26,14 @@ class BPETokenizer:
         self.merges = merges
         self.special_tokens = special_tokens or []
 
+        # Hot-path helpers
+        self._special_tokens_set = set(self.special_tokens)
+        # Precompute single-byte tokens to avoid per-byte allocations in encode()
+        self._byte_tokens = [bytes([i]) for i in range(256)]
+        # Cache: pretoken bytes -> list[int] token ids
+        self._encode_cache: Dict[bytes, List[int]] = {}
+        self._encode_cache_max_entries = 100_000
+
         # reverse map 
         self.token_to_id = {v: k for k, v in vocab.items()}
 
@@ -62,7 +70,7 @@ class BPETokenizer:
             parts = [text]
 
         for part in parts:
-            if part in self.special_tokens:
+            if self._special_tokens_set and part in self._special_tokens_set:
                 b = part.encode("utf-8")
                 ids.append(self.token_to_id[b])
                 continue
@@ -70,10 +78,21 @@ class BPETokenizer:
             for match in self._pre_pat.finditer(part):
                 piece = match.group(0)
                 b = piece.encode("utf-8")
-                symbols = [bytes([x]) for x in b]
+
+                cached = self._encode_cache.get(b)
+                if cached is not None:
+                    ids.extend(cached)
+                    continue
+
+                symbols = [self._byte_tokens[x] for x in b]
                 symbols = self._bpe(symbols)
-                for sym in symbols:
-                    ids.append(self.token_to_id[sym])
+                out_ids = [self.token_to_id[sym] for sym in symbols]
+                ids.extend(out_ids)
+
+                # Simple bounded cache (high hit rate on natural language)
+                if len(self._encode_cache) >= self._encode_cache_max_entries:
+                    self._encode_cache.clear()
+                self._encode_cache[b] = out_ids
         return ids
     
     def decode(self, ids: List[int]) -> str:

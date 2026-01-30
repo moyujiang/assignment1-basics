@@ -16,7 +16,9 @@ from __future__ import annotations
 
 import argparse
 import ast
+import codecs
 import json
+import multiprocessing as mp
 import os
 import re
 from pathlib import Path
@@ -26,6 +28,7 @@ from typing import Iterable, Iterator
 import numpy as np
 
 from cs336_basics.bpe_tokenizer import BPETokenizer
+from cs336_basics.pretokenization_example import find_chunk_boundaries
 
 
 BYTES_LITERAL_RE = re.compile(r"b'(?:\\.|[^'])*'|b\"(?:\\.|[^\"])*\"")
@@ -53,18 +56,99 @@ def load_tokenizer(vocab_path: Path, merges_path: Path, special_tokens: list[str
 
 
 def iter_text_chunks(path: Path, chunk_bytes: int) -> Iterator[str]:
-    # Text mode is fine here because BPETokenizer.encode_iterable is designed to
-    # handle chunk boundaries deterministically via buffering.
-    with open(path, "r", encoding="utf-8", errors="ignore") as f:
+    decoder = codecs.getincrementaldecoder("utf-8")(errors="ignore")
+    with open(path, "rb") as f:
         while True:
-            s = f.read(chunk_bytes)
-            if not s:
+            b = f.read(chunk_bytes)
+            if not b:
                 break
-            yield s
+            s = decoder.decode(b)
+            if s:
+                yield s
+        tail = decoder.decode(b"", final=True)
+        if tail:
+            yield tail
+
+
+def iter_text_from_byte_range(path: Path, start: int, end: int, read_bytes: int) -> Iterator[str]:
+    """Stream UTF-8 text decoded from a byte range [start, end).
+
+    Uses an incremental UTF-8 decoder so we don't lose characters when read
+    boundaries fall inside multibyte codepoints.
+    """
+    decoder = codecs.getincrementaldecoder("utf-8")(errors="ignore")
+    remaining = end - start
+    with open(path, "rb") as f:
+        f.seek(start)
+        while remaining > 0:
+            b = f.read(min(read_bytes, remaining))
+            if not b:
+                break
+            remaining -= len(b)
+            s = decoder.decode(b)
+            if s:
+                yield s
+        tail = decoder.decode(b"", final=True)
+        if tail:
+            yield tail
 
 
 def count_tokens(tokenizer: BPETokenizer, text_chunks: Iterable[str]) -> int:
     return sum(1 for _ in tokenizer.encode_iterable(text_chunks))
+
+
+_WORKER_TOKENIZER: BPETokenizer | None = None
+
+
+def _init_worker_tokenizer(vocab: dict[int, bytes], merges: list[tuple[bytes, bytes]], special_tokens: list[str]) -> None:
+    global _WORKER_TOKENIZER
+    _WORKER_TOKENIZER = BPETokenizer(vocab=vocab, merges=merges, special_tokens=special_tokens)
+
+
+def _count_range_worker(args: tuple[str, int, int, int]) -> int:
+    """Count tokens in a file byte-range."""
+    path_s, start, end, read_bytes = args
+    assert _WORKER_TOKENIZER is not None
+    path = Path(path_s)
+    return sum(1 for _ in _WORKER_TOKENIZER.encode_iterable(iter_text_from_byte_range(path, start, end, read_bytes)))
+
+
+def _write_range_worker(args: tuple[str, str, int, int, int, int, int]) -> int:
+    """Write tokens for a file byte-range into a shared memmap slice.
+
+    Args tuple:
+      input_path, output_path, total_tokens, start, end, offset, read_bytes
+    Returns: number of tokens written.
+    """
+    input_path_s, output_path_s, total_tokens, start, end, offset, read_bytes = args
+    assert _WORKER_TOKENIZER is not None
+
+    input_path = Path(input_path_s)
+    output_path = Path(output_path_s)
+    arr = np.lib.format.open_memmap(output_path, mode="r+", dtype=np.uint16, shape=(total_tokens,))
+
+    idx = int(offset)
+    written = 0
+    buf: list[int] = []
+    buf_append = buf.append
+
+    for tok in _WORKER_TOKENIZER.encode_iterable(iter_text_from_byte_range(input_path, start, end, read_bytes)):
+        buf_append(tok)
+        if len(buf) >= 262_144:
+            n = len(buf)
+            arr[idx : idx + n] = np.asarray(buf, dtype=np.uint16)
+            idx += n
+            written += n
+            buf.clear()
+
+    if buf:
+        n = len(buf)
+        arr[idx : idx + n] = np.asarray(buf, dtype=np.uint16)
+        idx += n
+        written += n
+        buf.clear()
+
+    return written
 
 
 def write_tokens_uint16(
@@ -75,6 +159,8 @@ def write_tokens_uint16(
     chunk_bytes: int,
     block_tokens: int,
     overwrite: bool,
+    workers: int,
+    doc_sep: str,
 ) -> dict[str, float]:
     if output_path.exists() and not overwrite:
         raise FileExistsError(f"Refusing to overwrite existing file: {output_path}")
@@ -83,9 +169,38 @@ def write_tokens_uint16(
     if max_id >= 2**16:
         raise ValueError(f"Tokenizer has token id {max_id}, which does not fit in uint16")
 
+    # Ensure doc_sep is representable as a special token and present in vocab.
+    sep_bytes = doc_sep.encode("utf-8")
+    if sep_bytes not in tokenizer.token_to_id:
+        raise ValueError(
+            f"doc-sep {doc_sep!r} is not in tokenizer vocab (did you pass it as a special token?)"
+        )
+
     # Pass 1: count tokens
     t0 = perf_counter()
-    n_tokens = count_tokens(tokenizer, iter_text_chunks(input_path, chunk_bytes))
+    if workers <= 1:
+        n_tokens = count_tokens(tokenizer, iter_text_chunks(input_path, chunk_bytes))
+    else:
+        # Split the file into byte ranges aligned to the special token boundary.
+        with open(input_path, "rb") as f:
+            boundaries = find_chunk_boundaries(
+                f,
+                desired_num_chunks=workers,
+                split_special_token=sep_bytes,
+            )
+        ranges = list(zip(boundaries[:-1], boundaries[1:]))
+
+        ctx = mp.get_context("spawn")
+        with ctx.Pool(
+            processes=workers,
+            initializer=_init_worker_tokenizer,
+            initargs=(tokenizer.vocab, tokenizer.merges, tokenizer.special_tokens),
+        ) as pool:
+            counts = pool.map(
+                _count_range_worker,
+                [(str(input_path), start, end, chunk_bytes) for start, end in ranges],
+            )
+        n_tokens = int(sum(counts))
     t1 = perf_counter()
 
     # Pass 2: write tokens
@@ -94,22 +209,75 @@ def write_tokens_uint16(
 
     idx = 0
     buf: list[int] = []
-    buf_append = buf.append
+    buf_extend = buf.extend
 
-    t2 = perf_counter()
-    for tok in tokenizer.encode_iterable(iter_text_chunks(input_path, chunk_bytes)):
-        buf_append(tok)
-        if len(buf) >= block_tokens:
-            n = len(buf)
-            arr[idx : idx + n] = np.asarray(buf, dtype=np.uint16)
-            idx += n
-            buf.clear()
-
-    if buf:
+    def flush_buf() -> None:
+        nonlocal idx
+        if not buf:
+            return
         n = len(buf)
         arr[idx : idx + n] = np.asarray(buf, dtype=np.uint16)
         idx += n
         buf.clear()
+
+    t2 = perf_counter()
+    if workers <= 1:
+        for tok in tokenizer.encode_iterable(iter_text_chunks(input_path, chunk_bytes)):
+            buf.append(tok)
+            if len(buf) >= block_tokens:
+                flush_buf()
+        flush_buf()
+    else:
+        # Recompute ranges (small cost) to avoid plumbing through count phase.
+        with open(input_path, "rb") as f:
+            boundaries = find_chunk_boundaries(
+                f,
+                desired_num_chunks=workers,
+                split_special_token=sep_bytes,
+            )
+        ranges = list(zip(boundaries[:-1], boundaries[1:]))
+
+        # Count per range again to compute offsets (still cheap vs writing, and keeps code simple).
+        ctx = mp.get_context("spawn")
+        with ctx.Pool(
+            processes=workers,
+            initializer=_init_worker_tokenizer,
+            initargs=(tokenizer.vocab, tokenizer.merges, tokenizer.special_tokens),
+        ) as pool:
+            counts = pool.map(
+                _count_range_worker,
+                [(str(input_path), start, end, chunk_bytes) for start, end in ranges],
+            )
+
+        offsets: list[int] = []
+        running = 0
+        for c in counts:
+            offsets.append(running)
+            running += int(c)
+        if running != n_tokens:
+            raise RuntimeError(f"Token count mismatch between passes: pass1={n_tokens}, pass2={running}")
+
+        with ctx.Pool(
+            processes=workers,
+            initializer=_init_worker_tokenizer,
+            initargs=(tokenizer.vocab, tokenizer.merges, tokenizer.special_tokens),
+        ) as pool:
+            written_counts = pool.map(
+                _write_range_worker,
+                [
+                    (
+                        str(input_path),
+                        str(output_path),
+                        int(n_tokens),
+                        int(start),
+                        int(end),
+                        int(offsets[i]),
+                        int(chunk_bytes),
+                    )
+                    for i, (start, end) in enumerate(ranges)
+                ],
+            )
+        idx = int(sum(int(x) for x in written_counts))
 
     if idx != n_tokens:
         raise RuntimeError(f"Token count mismatch: counted {n_tokens}, wrote {idx}")
@@ -136,14 +304,33 @@ def main() -> None:
     ap.add_argument("--out-dir", type=str, default="data/tokenized")
     ap.add_argument("--chunk-mb", type=int, default=4)
     ap.add_argument("--block-tokens", type=int, default=1_000_000)
+    ap.add_argument(
+        "--workers",
+        type=int,
+        default=0,
+        help="Number of worker processes for tokenization (0 = auto from CPU/GPU counts)",
+    )
+    ap.add_argument("--doc-sep", type=str, default="<|endoftext|>")
     ap.add_argument("--overwrite", action="store_true")
     args = ap.parse_args()
+
+    # Auto workers: prefer CPU parallelism; GPU count is included only as a fallback signal.
+    if args.workers <= 0:
+        cpu_workers = os.cpu_count() or 1
+        try:
+            import torch
+
+            gpu_workers = torch.cuda.device_count() if torch.cuda.is_available() else 0
+        except Exception:
+            gpu_workers = 0
+
+        args.workers = max(1, cpu_workers, gpu_workers)
 
     root = Path(__file__).resolve().parents[1]
     data_dir = root / "data"
     out_dir = root / args.out_dir
 
-    special_tokens = ["<|endoftext|>"]
+    special_tokens = [args.doc_sep]
     chunk_bytes = args.chunk_mb * (1 << 20)
 
     splits = [s.strip() for s in args.splits.split(",") if s.strip()]
@@ -169,6 +356,8 @@ def main() -> None:
                 chunk_bytes=chunk_bytes,
                 block_tokens=args.block_tokens,
                 overwrite=args.overwrite,
+                workers=args.workers,
+                doc_sep=args.doc_sep,
             )
 
             print(f"[{name}:{split}] -> {out_path}")
