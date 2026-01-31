@@ -1,0 +1,37 @@
+{
+  "train_data": "data/tokenized/owt_train.uint16.npy",
+  "val_data": "data/tokenized/owt_valid.uint16.npy",
+  "vocab_size": 10000,
+  
+  "context_length": 512,
+  "num_layers": 12,
+  "d_model": 768,
+  "num_heads": 12,
+  "d_ff": 3072,
+  "rope_theta": 10000.0,
+  
+  "max_lr": 3e-4,
+  "min_lr": 3e-5,
+  "weight_decay": 0.1,
+  "beta1": 0.9,
+  "beta2": 0.95,
+  "eps": 1e-8,
+  "grad_clip": 1.0,
+  
+  "batch_size": 8,
+  "max_iters": 100000,
+  "warmup_iters": 2000,
+  
+  "log_interval": 10,
+  "eval_interval": 1000,
+  "eval_iters": 100,
+  "checkpoint_dir": "checkpoints/openwebtext",
+  "checkpoint_interval": 5000,
+  
+  "device": "cuda",
+  "seed": 42,
+  
+  "tensorboard": true,
+  "tensorboard_dir": "runs/openwebtext",
+  "run_name": "owt-12L-768d"
+}

@@ -1,0 +1,37 @@
+{
+  "train_data": "data/tokenized/tinystories_train.uint16.npy",
+  "val_data": "data/tokenized/tinystories_valid.uint16.npy",
+  "vocab_size": 10000,
+  
+  "context_length": 256,
+  "num_layers": 4,
+  "d_model": 512,
+  "num_heads": 16,
+  "d_ff": 1344,
+  "rope_theta": 10000.0,
+  
+  "max_lr": 6e-4,
+  "min_lr": 6e-5,
+  "weight_decay": 0.1,
+  "beta1": 0.9,
+  "beta2": 0.95,
+  "eps": 1e-8,
+  "grad_clip": 1.0,
+  
+  "batch_size": 32,
+  "max_iters": 40000,
+  "warmup_iters": 2000,
+  
+  "log_interval": 100,
+  "eval_interval": 2000,
+  "eval_iters": 100,
+  "checkpoint_dir": "checkpoints/tinystories",
+  "checkpoint_interval": 5000,
+  
+  "device": "cuda",
+  "seed": 42,
+  
+  "tensorboard": true,
+  "tensorboard_dir": "runs/tinystories",
+  "run_name": "tinystories-4L-512d"
+}

@@ -13,25 +13,25 @@ from cs336_basics.data import load_dataset, get_batch
 from cs336_basics.checkpoint import save_checkpoint, load_checkpoint
 
 try:
-    import wandb
-    WANDB_AVAILABLE = True
+    from torch.utils.tensorboard import SummaryWriter
+    TENSORBOARD_AVAILABLE = True
 except ImportError:
-    WANDB_AVAILABLE = False
+    TENSORBOARD_AVAILABLE = False
 
 
 def train(args):
     """Main training loop with periodic evaluation and checkpointing."""
     
-    # Initialize Weights & Biases if enabled
-    if args.wandb and WANDB_AVAILABLE:
-        wandb.init(
-            project=args.wandb_project,
-            name=args.wandb_run_name,
-            config=vars(args),
-            tags=args.wandb_tags.split(',') if args.wandb_tags else None,
-        )
-    elif args.wandb and not WANDB_AVAILABLE:
-        print("Warning: wandb requested but not installed. Install with: pip install wandb")
+    # Initialize TensorBoard if enabled
+    tb_writer = None
+    if args.tensorboard and TENSORBOARD_AVAILABLE:
+        tb_log_dir = Path(args.tensorboard_dir) / (args.run_name or "run")
+        tb_log_dir.mkdir(parents=True, exist_ok=True)
+        tb_writer = SummaryWriter(log_dir=str(tb_log_dir))
+        print(f"TensorBoard: {tb_log_dir}")
+        print(f"View with: tensorboard --logdir {args.tensorboard_dir}")
+    elif args.tensorboard and not TENSORBOARD_AVAILABLE:
+        print("Warning: tensorboard not available. Install with: pip install tensorboard")
     
     # Setup device
     device = args.device
@@ -79,6 +79,14 @@ def train(args):
     print(f"\nStarting training...")
     model.train()
     
+    # Training metrics tracking
+    train_losses = []
+    train_loss_window = []  # For smoothed loss curve
+    window_size = min(100, args.log_interval)
+    tokens_seen = 0
+    total_tokens = 0
+    best_val_loss = float('inf')
+    
     for iteration in range(start_iter, args.max_iters):
         t0 = time.time()
         
@@ -112,22 +120,48 @@ def train(args):
         optimizer.step()
         
         dt = time.time() - t0
+        tokens_per_batch = args.batch_size * args.context_length
+        tokens_seen += tokens_per_batch
+        total_tokens += tokens_per_batch
+        
+        # Track training loss
+        train_losses.append(loss.item())
+        train_loss_window.append(loss.item())
+        if len(train_loss_window) > window_size:
+            train_loss_window.pop(0)
+        
+        # Compute gradient norm for monitoring
+        total_norm = 0.0
+        for p in model.parameters():
+            if p.grad is not None:
+                param_norm = p.grad.data.norm(2)
+                total_norm += param_norm.item() ** 2
+        total_norm = total_norm ** 0.5
         
         # Logging
         if iteration % args.log_interval == 0:
-            print(f"iter {iteration:6d} | loss {loss.item():.4f} | lr {lr:.2e} | {dt*1000:.2f}ms")
+            smoothed_loss = np.mean(train_loss_window)
+            tokens_per_sec = tokens_seen / dt if dt > 0 else 0
+            print(f"iter {iteration:6d} | loss {loss.item():.4f} | lr {lr:.2e} | "
+                  f"{dt*1000:.2f}ms | {tokens_per_sec:.0f} tok/s")
             
-            if args.wandb and WANDB_AVAILABLE:
-                wandb.log({
-                    "train/loss": loss.item(),
-                    "train/lr": lr,
-                    "train/iter_time_ms": dt * 1000,
-                }, step=iteration)
+            # Log to TensorBoard
+            if tb_writer is not None:
+                tb_writer.add_scalar('train/loss', loss.item(), iteration)
+                tb_writer.add_scalar('train/loss_smoothed', smoothed_loss, iteration)
+                tb_writer.add_scalar('train/lr', lr, iteration)
+                tb_writer.add_scalar('train/grad_norm', total_norm, iteration)
+                tb_writer.add_scalar('train/perplexity', np.exp(loss.item()), iteration)
+                tb_writer.add_scalar('system/tokens_per_sec', tokens_per_sec, iteration)
+            
+            tokens_seen = 0
         
         # Evaluation
         if iteration % args.eval_interval == 0 and iteration > 0:
             model.eval()
             val_losses = []
+            eval_start = time.time()
+            
             with torch.no_grad():
                 for _ in range(args.eval_iters):
                     val_inputs, val_targets = get_batch(val_data, args.batch_size, args.context_length, device)
@@ -135,15 +169,20 @@ def train(args):
                     val_loss = cross_entropy(val_logits, val_targets)
                     val_losses.append(val_loss.item())
             
+            eval_time = time.time() - eval_start
             val_loss_mean = np.mean(val_losses)
+            val_loss_std = np.std(val_losses)
             val_ppl = np.exp(val_loss_mean)
-            print(f"[EVAL] iter {iteration:6d} | val_loss {val_loss_mean:.4f} | val_ppl {val_ppl:.2f}")
             
-            if args.wandb and WANDB_AVAILABLE:
-                wandb.log({
-                    "val/loss": val_loss_mean,
-                    "val/perplexity": val_ppl,
-                }, step=iteration)
+            print(f"[EVAL] iter {iteration:6d} | val_loss {val_loss_mean:.4f}±{val_loss_std:.4f} | val_ppl {val_ppl:.2f}")
+            
+            # Log to TensorBoard
+            if tb_writer is not None:
+                tb_writer.add_scalar('val/loss', val_loss_mean, iteration)
+                tb_writer.add_scalar('val/perplexity', val_ppl, iteration)
+                if val_loss_mean < best_val_loss:
+                    best_val_loss = val_loss_mean
+                    tb_writer.add_scalar('val/best_loss', best_val_loss, iteration)
             
             model.train()
         
@@ -160,9 +199,9 @@ def train(args):
         save_checkpoint(model, optimizer, args.max_iters, final_path)
         print(f"\nTraining complete. Final checkpoint: {final_path}")
     
-    # Finish wandb run
-    if args.wandb and WANDB_AVAILABLE:
-        wandb.finish()
+    # Close TensorBoard writer
+    if tb_writer is not None:
+        tb_writer.close()
 
 
 def main():
@@ -207,11 +246,10 @@ def main():
     parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu")
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
     
-    # Weights & Biases
-    parser.add_argument("--wandb", action="store_true", help="Enable Weights & Biases logging")
-    parser.add_argument("--wandb-project", type=str, default="cs336-transformer", help="W&B project name")
-    parser.add_argument("--wandb-run-name", type=str, default=None, help="W&B run name")
-    parser.add_argument("--wandb-tags", type=str, default=None, help="Comma-separated W&B tags")
+    # TensorBoard
+    parser.add_argument("--tensorboard", action="store_true", help="Enable TensorBoard logging")
+    parser.add_argument("--tensorboard-dir", type=str, default="runs", help="TensorBoard log directory")
+    parser.add_argument("--run-name", type=str, default=None, help="Run name for logging")
     
     # Config file support
     parser.add_argument("--config", type=str, help="Load config from JSON file")
