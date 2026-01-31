@@ -2,6 +2,8 @@ import torch
 from torch import nn, Tensor
 
 class RMSNorm(nn.Module):
+    """Root Mean Square Layer Normalization."""
+    
     def __init__(self, d_model: int, eps: float = 1e-5, device=None, dtype=None):
         super().__init__()
         factory_kwargs = {'device': device, 'dtype': dtype}

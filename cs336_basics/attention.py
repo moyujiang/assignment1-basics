@@ -33,19 +33,20 @@ def scaled_dot_product_attention(
     return torch.einsum("...ij,...jd->...id", attn_weights, V)
 
 class CausalMultiHeadSelfAttention(nn.Module):
+    """Causal multi-head self-attention with optional RoPE."""
+    
     def __init__(self, d_model: int, num_heads: int, device=None, dtype=None):
         super().__init__()
-        factory_kwargs = {'device': device, 'dtype': dtype}
 
         assert d_model % num_heads == 0, "d_model must be divisible by num_heads"
         self.d_k = d_model // num_heads
         self.num_heads = num_heads
         self.d_model = d_model
 
-        self.q_proj = nn.Parameter(torch.empty(d_model, d_model, **factory_kwargs))
-        self.k_proj = nn.Parameter(torch.empty(d_model, d_model, **factory_kwargs))
-        self.v_proj = nn.Parameter(torch.empty(d_model, d_model, **factory_kwargs))
-        self.o_proj = nn.Parameter(torch.empty(d_model, d_model, **factory_kwargs))
+        self.q_proj = nn.Parameter(torch.empty(d_model, d_model, device=device, dtype=dtype))
+        self.k_proj = nn.Parameter(torch.empty(d_model, d_model, device=device, dtype=dtype))
+        self.v_proj = nn.Parameter(torch.empty(d_model, d_model, device=device, dtype=dtype))
+        self.o_proj = nn.Parameter(torch.empty(d_model, d_model, device=device, dtype=dtype))
 
         nn.init.xavier_uniform_(self.q_proj)
         nn.init.xavier_uniform_(self.k_proj)
@@ -74,6 +75,7 @@ class CausalMultiHeadSelfAttention(nn.Module):
             q = rope(q, token_positions)
             k = rope(k, token_positions)
 
+        # Create causal mask (lower triangular)
         mask = torch.tril(torch.ones((seq_len, seq_len), device=x.device, dtype=torch.bool))
         attn = scaled_dot_product_attention(q, k, v, mask=mask)
 

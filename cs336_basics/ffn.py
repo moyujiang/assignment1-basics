@@ -2,6 +2,8 @@ import torch
 from torch import nn, Tensor
 
 class SwiGLU(nn.Module):
+    """SwiGLU feedforward network: SwiGLU(x) = (Swish(xW1) ⊙ xW3)W2."""
+    
     def __init__(self, d_model: int, d_ff: int, device=None, dtype=None):
         super().__init__()
         factory_kwargs = {'device': device, 'dtype': dtype}

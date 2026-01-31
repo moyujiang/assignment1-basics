@@ -3,6 +3,8 @@ from torch import nn, Tensor
 
 
 class Linear(nn.Module):
+    """Linear transformation layer: y = xW^T."""
+    
     def __init__(self, in_features, out_features, device=None, dtype=None):
         super().__init__()
         factory_kwargs = {'device': device, 'dtype': dtype}

@@ -17,11 +17,23 @@ class RoPE(nn.Module):
         self.register_buffer("sin_buffer", sin_buffer)
     
     def forward(self, x: Tensor, token_positions: Tensor) -> Tensor:
-        cos = self.cos_buffer[token_positions].to(dtype=x.dtype)
-        sin = self.sin_buffer[token_positions].to(dtype=x.dtype)
+        # x shape: (..., h, seq_len, d_k) or (..., seq_len, d_k)
+        # token_positions shape: (..., seq_len)
+        
+        # Get cos and sin for the given positions
+        cos = self.cos_buffer[token_positions].to(dtype=x.dtype)  # (..., seq_len, d_k//2)
+        sin = self.sin_buffer[token_positions].to(dtype=x.dtype)  # (..., seq_len, d_k//2)
+        
+        # Add dimension for heads if needed (when x has heads dimension)
+        # x can be (..., h, seq_len, d_k) or (..., seq_len, d_k)
+        if x.dim() > cos.dim():
+            # Insert head dimension: (..., seq_len, d_k//2) -> (..., 1, seq_len, d_k//2)
+            cos = cos.unsqueeze(-3)
+            sin = sin.unsqueeze(-3)
 
-        x1 = x[..., 0::2]
-        x2 = x[..., 1::2]
+        x1 = x[..., 0::2]  # even indices
+        x2 = x[..., 1::2]  # odd indices
+        
         rot_even = x1 * cos - x2 * sin
         rot_odd = x1 * sin + x2 * cos
         x_rotated = torch.stack((rot_even, rot_odd), dim=-1).flatten(-2)

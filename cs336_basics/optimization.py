@@ -1,9 +1,18 @@
 import torch
 import math
-from torch import nn, Tensor
 from typing import Iterable
 
 class AdamW(torch.optim.Optimizer):
+    """AdamW optimizer with decoupled weight decay.
+    
+    Args:
+        params: Iterable of parameters to optimize.
+        lr: Learning rate (default: 1e-3).
+        betas: Coefficients for computing running averages (default: (0.9, 0.999)).
+        eps: Term added to denominator for numerical stability (default: 1e-8).
+        weight_decay: Weight decay coefficient (default: 1e-2).
+    """
+    
     def __init__(self, params, lr=1e-3, betas=(0.9, 0.999), eps=1e-8, weight_decay=1e-2):
         defaults = dict(lr=lr, betas=betas, eps=eps, weight_decay=weight_decay)
         super(AdamW, self).__init__(params, defaults)
@@ -62,7 +71,7 @@ def get_lr_cosine_schedule(t: int, lr_max: float, lr_min: float, T_w: int, T_c: 
     if t < T_w:
         lr = lr_max * (t / T_w)
     elif t < T_c:
-        cosine_decay = 0.5 * (1 + math.cos(torch.pi * (t - T_w) / (T_c - T_w)))
+        cosine_decay = 0.5 * (1 + math.cos(math.pi * (t - T_w) / (T_c - T_w)))
         lr = lr_min + (lr_max - lr_min) * cosine_decay
     else:
         lr = lr_min
@@ -70,22 +79,23 @@ def get_lr_cosine_schedule(t: int, lr_max: float, lr_min: float, T_w: int, T_c: 
 
 
 def gradient_clipping(parameters: Iterable[torch.nn.Parameter], max_l2_norm: float) -> None:
-    """
-    Given a set of parameters, clip their combined gradients to have l2 norm at most max_l2_norm.
+    """Clip gradients by global L2 norm.
 
     Args:
-        parameters (Iterable[torch.nn.Parameter]): Iterable of model parameters with gradients.
-        max_l2_norm (float): Maximum allowed l2 norm for the gradients.
+        parameters: Iterable of model parameters with gradients.
+        max_l2_norm: Maximum allowed L2 norm for the gradients.
     """
+    # Compute total gradient norm
     total_norm = 0.0
-    for p in parameters:
-        if p.grad is not None:
-            param_norm = p.grad.data.norm(2)
-            total_norm += param_norm.item() ** 2
+    params_with_grad = [p for p in parameters if p.grad is not None]
+    
+    for p in params_with_grad:
+        param_norm = p.grad.data.norm(2)
+        total_norm += param_norm.item() ** 2
     total_norm = total_norm ** 0.5
 
+    # Clip if needed
     clip_coef = max_l2_norm / (total_norm + 1e-6)
     if clip_coef < 1:
-        for p in parameters:
-            if p.grad is not None:
-                p.grad.data.mul_(clip_coef)
+        for p in params_with_grad:
+            p.grad.data.mul_(clip_coef)

@@ -1,5 +1,4 @@
 import torch
-from torch import nn, Tensor
 import numpy as np
 import numpy.typing as npt
 from pathlib import Path
@@ -82,16 +81,14 @@ def get_batch(
             f"dataset length ({dataset_length})"
         )
     
+    # Sample random starting positions
     start_indices = np.random.randint(0, dataset_length - context_length, size=batch_size)
+    
+    # Use advanced indexing for more efficient batch creation
+    # Create index arrays for inputs and targets
+    idx = start_indices[:, None] + np.arange(context_length)
+    inputs = dataset[idx]
+    targets = dataset[idx + 1]
 
-    inputs = np.stack(
-        [dataset[start : start + context_length] for start in start_indices]
-    )
-    targets = np.stack(
-        [dataset[start + 1 : start + context_length + 1] for start in start_indices]
-    )
-
-    inputs_tensor = torch.tensor(inputs, dtype=torch.long, device=device)
-    targets_tensor = torch.tensor(targets, dtype=torch.long, device=device)
-
-    return inputs_tensor, targets_tensor
+    return torch.from_numpy(inputs).to(device=device, dtype=torch.long), \
+           torch.from_numpy(targets).to(device=device, dtype=torch.long)

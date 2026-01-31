@@ -9,17 +9,12 @@ from cs336_basics.embedding import Embedding
 
 
 class TransformerBlock(nn.Module):
+    """Pre-norm Transformer block with causal self-attention and SwiGLU FFN."""
+    
     def __init__(self, d_model: int, num_heads: int, d_ff: int, device=None, dtype=None):
         super().__init__()
-        factory_kwargs = {'device': device, 'dtype': dtype}
-
-        from cs336_basics.attention import CausalMultiHeadSelfAttention
-        from cs336_basics.ffn import SwiGLU
-        from cs336_basics.rmsnorm import RMSNorm
-
         self.self_attn = CausalMultiHeadSelfAttention(d_model, num_heads, device=device, dtype=dtype)
         self.ffn = SwiGLU(d_model, d_ff, device=device, dtype=dtype)
-
         self.norm1 = RMSNorm(d_model, device=device, dtype=dtype)
         self.norm2 = RMSNorm(d_model, device=device, dtype=dtype)
 
@@ -29,16 +24,19 @@ class TransformerBlock(nn.Module):
         rope: RoPE | None = None,
         token_positions: Tensor | None = None,
     ) -> Tensor:
-        # Pre-norm self-attention
-
+        # Pre-norm: LayerNorm -> Self-Attention -> Residual
         attn_output = self.self_attn(self.norm1(x), rope=rope, token_positions=token_positions)
         x = x + attn_output
+        
+        # Pre-norm: LayerNorm -> FFN -> Residual
         ffn_output = self.ffn(self.norm2(x))
         x = x + ffn_output
-
+        
         return x
 
 class TransformerLM(nn.Module):
+    """Transformer language model with RoPE positional encodings."""
+    
     def __init__(
         self,
         vocab_size: int,
