@@ -22,16 +22,46 @@ except ImportError:
 def train(args):
     """Main training loop with periodic evaluation and checkpointing."""
     
+    # Auto-adjust checkpoint_dir and run_name to include learning rate if not already present
+    def format_lr(lr):
+        """Format learning rate as string, e.g., 6e-4 -> lr6e-4"""
+        if lr >= 1e-3:
+            # For values >= 1e-3, use 1 decimal place to distinguish values like 1.2e-3
+            return f"lr{lr:.1e}".replace("e-0", "e-").replace("e+0", "e+").replace(".0e", "e")
+        else:
+            # For values < 1e-3, format as integer coefficient
+            exp = int(np.log10(lr))
+            coeff = lr / (10 ** exp)
+            if abs(coeff - int(coeff)) < 1e-6:
+                return f"lr{int(coeff)}e{exp}"
+            else:
+                return f"lr{lr:.0e}".replace("e-0", "e-").replace("e+0", "e+")
+    
+    lr_str = format_lr(args.max_lr)
+    if lr_str not in args.checkpoint_dir:
+        # Extract base directory and append lr suffix
+        checkpoint_base = Path(args.checkpoint_dir)
+        args.checkpoint_dir = str(checkpoint_base.parent / f"{checkpoint_base.name}_{lr_str}")
+    
+    if args.run_name and lr_str not in args.run_name:
+        args.run_name = f"{args.run_name}_{lr_str}"
+    elif not args.run_name:
+        args.run_name = f"run_{lr_str}"
+    
     # Initialize TensorBoard if enabled
     tb_writer = None
     if args.tensorboard and TENSORBOARD_AVAILABLE:
         tb_log_dir = Path(args.tensorboard_dir) / (args.run_name or "run")
         tb_log_dir.mkdir(parents=True, exist_ok=True)
         tb_writer = SummaryWriter(log_dir=str(tb_log_dir))
-        print(f"TensorBoard: {tb_log_dir}")
-        print(f"View with: tensorboard --logdir {args.tensorboard_dir}")
+        print(f"TensorBoard logging enabled: {tb_log_dir}")
+        print(f"View with: tensorboard --logdir {tb_log_dir.parent}")
     elif args.tensorboard and not TENSORBOARD_AVAILABLE:
-        print("Warning: tensorboard not available. Install with: pip install tensorboard")
+        print("=" * 80)
+        print("WARNING: TensorBoard is not available!")
+        print("Install with: pip install tensorboard")
+        print("Or with uv: uv pip install tensorboard")
+        print("=" * 80)
     
     # Setup device
     device = args.device
@@ -196,6 +226,7 @@ def train(args):
     # Final checkpoint
     if args.checkpoint_dir:
         final_path = Path(args.checkpoint_dir) / "checkpoint_final.pt"
+        final_path.parent.mkdir(parents=True, exist_ok=True)
         save_checkpoint(model, optimizer, args.max_iters, final_path)
         print(f"\nTraining complete. Final checkpoint: {final_path}")
     

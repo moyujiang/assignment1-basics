@@ -1,5 +1,19 @@
 # 训练监控 - TensorBoard
 
+## 安装 TensorBoard
+
+在使用 TensorBoard 之前，需要先安装：
+
+```bash
+pip install tensorboard
+```
+
+或使用 uv：
+
+```bash
+uv pip install tensorboard
+```
+
 ## 快速开始
 
 ### 1. 训练模型
@@ -10,13 +24,23 @@ python -m cs336_basics.train \
     --tensorboard
 ```
 
-### 2. 查看TensorBoard
+**注意**：如果 TensorBoard 未安装，训练脚本会显示警告信息，但训练仍会正常进行（只是不会记录日志）。
+
+### 2. 查看 TensorBoard
+
+训练开始后，脚本会显示日志目录路径，例如：
+```
+TensorBoard logging enabled: runs/tinystories/tinystories-4L-512d
+View with: tensorboard --logdir runs/tinystories
+```
+
+在另一个终端运行：
 
 ```bash
 tensorboard --logdir runs/tinystories
 ```
 
-访问 http://localhost:6006
+然后在浏览器访问 http://localhost:6006
 
 ### 3. 快速演示
 
