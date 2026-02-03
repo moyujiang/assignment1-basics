@@ -112,18 +112,12 @@ def generate(
             # Get logits for next token
             logits = model(input_for_model)  # (batch, seq_len, vocab_size)
             next_logits = logits[:, -1, :]   # (batch, vocab_size)
-            
-            # Clamp logits to prevent overflow in softmax
-            max_logits = 20.0  # softmax is invariant to adding constants
-            next_logits = torch.clamp(next_logits, min=-max_logits, max=max_logits)
-            
-            # Subtract max for numerical stability (standard trick)
-            next_logits = next_logits - next_logits.max(dim=-1, keepdim=True)[0]
-            
-            # Apply temperature
+
+            # Apply temperature, then subtract max for numerical stability.
             next_logits = apply_temperature(next_logits, temperature)
-            
-            # Convert to probabilities with numerical stability
+            next_logits = next_logits - next_logits.max(dim=-1, keepdim=True)[0]
+
+            # Convert to probabilities
             probs = torch.softmax(next_logits, dim=-1)
             
             # If softmax produced NaN/Inf, use uniform distribution
