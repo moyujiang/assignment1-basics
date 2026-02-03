@@ -16,10 +16,7 @@ import shutil
 # Global flag to track if interrupt was received
 _interrupt_requested = False
 
-# Learning rates to test (based on 6e-4 as baseline)
-# We'll test: 3e-4, 4e-4, 6e-4 (baseline, already completed), 8e-4, 1e-3, 1.2e-3
-# Note: 6e-4 is already completed, so we skip it
-LEARNING_RATES = [3e-4, 4e-4, 8e-4, 1e-3, 1.2e-3]
+LEARNING_RATES = [8e-3]
 
 # Base config path
 BASE_CONFIG = "configs/train_tinystories.json"
@@ -45,7 +42,7 @@ def format_lr(lr):
 def run_training(lr):
     """Run training with given learning rate."""
     lr_str = format_lr(lr)
-    min_lr = lr / 10
+    min_lr = 1e-5
     
     print("=" * 80)
     print(f"Starting training with max_lr={lr} (min_lr={min_lr})")
@@ -222,23 +219,6 @@ def main():
     
     print(f"\nResults saved to: {RESULTS_FILE}")
     
-    # Auto-shutdown after completion (only if not interrupted)
-    print("\n" + "=" * 80)
-    print("Training sweep completed. System will shutdown in 10 seconds...")
-    print("Press Ctrl+C to cancel shutdown")
-    print("=" * 80)
-    
-    try:
-        time.sleep(10)
-        print("\nShutting down now...")
-        # Use shutdown command
-        if shutil.which("sudo"):
-            subprocess.run(["sudo", "shutdown", "-h", "now"], check=False)
-        else:
-            subprocess.run(["shutdown", "-h", "now"], check=False)
-    except KeyboardInterrupt:
-        print("\nShutdown cancelled by user.")
-        sys.exit(0)
 
 
 if __name__ == "__main__":

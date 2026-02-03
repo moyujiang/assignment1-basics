@@ -12,6 +12,10 @@ class SwiGLU(nn.Module):
         self.w2 = nn.Parameter(torch.empty(d_model, d_ff, **factory_kwargs))
         self.w3 = nn.Parameter(torch.empty(d_ff, d_model, **factory_kwargs))
 
+        nn.init.xavier_uniform_(self.w1)
+        nn.init.xavier_uniform_(self.w2)
+        nn.init.xavier_uniform_(self.w3)
+
     def silu(self, x: Tensor) -> Tensor:
         return x * torch.sigmoid(x)
 

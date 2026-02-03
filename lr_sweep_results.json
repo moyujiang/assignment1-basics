@@ -1,57 +1,13 @@
 [
   {
-    "lr": 0.0003,
-    "lr_str": "3e-4",
-    "min_lr": 2.9999999999999997e-05,
+    "lr": 0.008,
+    "lr_str": "8e-3",
+    "min_lr": 1e-05,
     "status": "completed",
-    "elapsed_time": 2247.096694469452,
+    "elapsed_time": 2046.762990951538,
     "error": null,
-    "checkpoint_dir": "checkpoints/tinystories_lr3e-4",
-    "final_checkpoint": "checkpoints/tinystories_lr3e-4/checkpoint_final.pt",
-    "tensorboard_dir": "runs/tinystories/tinystories-4L-512d_lr3e-4"
-  },
-  {
-    "lr": 0.0004,
-    "lr_str": "4e-4",
-    "min_lr": 4e-05,
-    "status": "completed",
-    "elapsed_time": 2237.655723810196,
-    "error": null,
-    "checkpoint_dir": "checkpoints/tinystories_lr4e-4",
-    "final_checkpoint": "checkpoints/tinystories_lr4e-4/checkpoint_final.pt",
-    "tensorboard_dir": "runs/tinystories/tinystories-4L-512d_lr4e-4"
-  },
-  {
-    "lr": 0.0008,
-    "lr_str": "8e-4",
-    "min_lr": 8e-05,
-    "status": "completed",
-    "elapsed_time": 2243.490813970566,
-    "error": null,
-    "checkpoint_dir": "checkpoints/tinystories_lr8e-4",
-    "final_checkpoint": "checkpoints/tinystories_lr8e-4/checkpoint_final.pt",
-    "tensorboard_dir": "runs/tinystories/tinystories-4L-512d_lr8e-4"
-  },
-  {
-    "lr": 0.001,
-    "lr_str": "1e-3",
-    "min_lr": 0.0001,
-    "status": "completed",
-    "elapsed_time": 2245.9126102924347,
-    "error": null,
-    "checkpoint_dir": "checkpoints/tinystories_lr1e-3",
-    "final_checkpoint": "checkpoints/tinystories_lr1e-3/checkpoint_final.pt",
-    "tensorboard_dir": "runs/tinystories/tinystories-4L-512d_lr1e-3"
-  },
-  {
-    "lr": 0.0012,
-    "lr_str": "1.2e-3",
-    "min_lr": 0.00011999999999999999,
-    "status": "completed",
-    "elapsed_time": 2244.231690645218,
-    "error": null,
-    "checkpoint_dir": "checkpoints/tinystories_lr1.2e-3",
-    "final_checkpoint": "checkpoints/tinystories_lr1.2e-3/checkpoint_final.pt",
-    "tensorboard_dir": "runs/tinystories/tinystories-4L-512d_lr1.2e-3"
+    "checkpoint_dir": "checkpoints/tinystories_lr8e-3",
+    "final_checkpoint": "checkpoints/tinystories_lr8e-3/checkpoint_final.pt",
+    "tensorboard_dir": "runs/tinystories/tinystories-4L-512d_lr8e-3"
   }
 ]

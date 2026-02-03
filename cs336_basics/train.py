@@ -253,7 +253,7 @@ def main():
     
     # Optimizer
     parser.add_argument("--max-lr", type=float, default=3e-4, help="Maximum learning rate")
-    parser.add_argument("--min-lr", type=float, default=3e-5, help="Minimum learning rate")
+    parser.add_argument("--min-lr", type=float, default=1e-5, help="Minimum learning rate")
     parser.add_argument("--weight-decay", type=float, default=0.1, help="Weight decay")
     parser.add_argument("--beta1", type=float, default=0.9, help="AdamW beta1")
     parser.add_argument("--beta2", type=float, default=0.95, help="AdamW beta2")

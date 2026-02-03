@@ -170,3 +170,5 @@ cython_debug/
 checkpoints/
 runs/
 *.pth
+
+./scripts/logs
