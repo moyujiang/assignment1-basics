@@ -41,6 +41,7 @@ def main() -> tuple[dict[int, bytes], list[tuple[bytes, bytes]], float, int]:
         vocab_size=vocab_size,
         special_tokens=special_tokens,
         timings=timings,
+        verbose=True,
     )
 
     end_time = time.time()

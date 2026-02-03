@@ -52,6 +52,7 @@ class CausalMultiHeadSelfAttention(nn.Module):
         nn.init.xavier_uniform_(self.k_proj)
         nn.init.xavier_uniform_(self.v_proj)
         nn.init.xavier_uniform_(self.o_proj)
+        self.register_buffer("_causal_mask", torch.empty(0, 0, dtype=torch.bool), persistent=False)
 
     def forward(
         self,
@@ -75,8 +76,12 @@ class CausalMultiHeadSelfAttention(nn.Module):
             q = rope(q, token_positions)
             k = rope(k, token_positions)
 
-        # Create causal mask (lower triangular)
-        mask = torch.tril(torch.ones((seq_len, seq_len), device=x.device, dtype=torch.bool))
+        # Create or reuse causal mask (lower triangular)
+        if self._causal_mask.device != x.device or self._causal_mask.size(0) < seq_len:
+            self._causal_mask = torch.tril(
+                torch.ones((seq_len, seq_len), device=x.device, dtype=torch.bool)
+            )
+        mask = self._causal_mask[:seq_len, :seq_len]
         attn = scaled_dot_product_attention(q, k, v, mask=mask)
 
         attn = einops.rearrange(attn, "... h s d -> ... s (h d)")

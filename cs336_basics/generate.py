@@ -43,8 +43,9 @@ def top_p_sampling(probs: Tensor, p: float = 0.95) -> Tensor:
     # Compute cumulative sum
     cumsum_probs = torch.cumsum(sorted_probs, dim=-1)
     
-    # Create mask: keep tokens until cumsum <= p
-    mask = cumsum_probs <= p
+    # Keep tokens until cumulative probability reaches p
+    # (i.e., include the token that crosses the threshold)
+    mask = (cumsum_probs - sorted_probs) < p
     # Always keep at least the top token
     mask[..., 0] = True
     
@@ -86,11 +87,22 @@ def generate(
     model.eval()
     context_length = model.context_length
     batch_size = input_ids.shape[0]
+    try:
+        model_device = next(model.parameters()).device
+    except StopIteration:
+        model_device = torch.device(device) if device is not None else input_ids.device
+    if input_ids.device != model_device:
+        input_ids = input_ids.to(model_device)
     
     with torch.no_grad():
         generated = input_ids.clone()
+        finished = None
+        if eos_token_id is not None:
+            finished = generated[:, -1] == eos_token_id
         
         for _ in range(max_new_tokens):
+            if finished is not None and finished.all():
+                break
             # Truncate to context length if needed
             if generated.shape[1] > context_length:
                 input_for_model = generated[:, -context_length:]
@@ -135,13 +147,15 @@ def generate(
             # Sample next tokens
             next_token_ids = torch.multinomial(probs, num_samples=1)  # (batch, 1)
             
+            # If EOS, stop generating for finished sequences
+            if finished is not None:
+                eos_reached = next_token_ids.squeeze(-1) == eos_token_id
+                finished = finished | eos_reached
+                if finished.any():
+                    next_token_ids = next_token_ids.clone()
+                    next_token_ids[finished, 0] = eos_token_id
+
             # Append to sequence
             generated = torch.cat([generated, next_token_ids], dim=1)
-            
-            # Early stopping if all sequences hit EOS
-            if eos_token_id is not None:
-                eos_reached = (next_token_ids.squeeze(-1) == eos_token_id)
-                if eos_reached.all():
-                    break
     
     return generated

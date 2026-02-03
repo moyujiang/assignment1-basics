@@ -114,6 +114,7 @@ def train(args):
     train_loss_window = []  # For smoothed loss curve
     window_size = min(100, args.log_interval)
     tokens_seen = 0
+    time_since_log = 0.0
     total_tokens = 0
     best_val_loss = float('inf')
     
@@ -142,9 +143,11 @@ def train(args):
         optimizer.zero_grad()
         loss.backward()
         
-        # Gradient clipping
+        # Gradient clipping (also returns grad norm for logging)
         if args.grad_clip > 0:
-            gradient_clipping(model.parameters(), args.grad_clip)
+            grad_norm = gradient_clipping(model.parameters(), args.grad_clip)
+        else:
+            grad_norm = gradient_clipping(model.parameters(), float("inf"))
         
         # Optimizer step
         optimizer.step()
@@ -152,6 +155,7 @@ def train(args):
         dt = time.time() - t0
         tokens_per_batch = args.batch_size * args.context_length
         tokens_seen += tokens_per_batch
+        time_since_log += dt
         total_tokens += tokens_per_batch
         
         # Track training loss
@@ -160,18 +164,10 @@ def train(args):
         if len(train_loss_window) > window_size:
             train_loss_window.pop(0)
         
-        # Compute gradient norm for monitoring
-        total_norm = 0.0
-        for p in model.parameters():
-            if p.grad is not None:
-                param_norm = p.grad.data.norm(2)
-                total_norm += param_norm.item() ** 2
-        total_norm = total_norm ** 0.5
-        
         # Logging
         if iteration % args.log_interval == 0:
             smoothed_loss = np.mean(train_loss_window)
-            tokens_per_sec = tokens_seen / dt if dt > 0 else 0
+            tokens_per_sec = tokens_seen / time_since_log if time_since_log > 0 else 0
             print(f"iter {iteration:6d} | loss {loss.item():.4f} | lr {lr:.2e} | "
                   f"{dt*1000:.2f}ms | {tokens_per_sec:.0f} tok/s")
             
@@ -180,11 +176,12 @@ def train(args):
                 tb_writer.add_scalar('train/loss', loss.item(), iteration)
                 tb_writer.add_scalar('train/loss_smoothed', smoothed_loss, iteration)
                 tb_writer.add_scalar('train/lr', lr, iteration)
-                tb_writer.add_scalar('train/grad_norm', total_norm, iteration)
+                tb_writer.add_scalar('train/grad_norm', grad_norm, iteration)
                 tb_writer.add_scalar('train/perplexity', np.exp(loss.item()), iteration)
                 tb_writer.add_scalar('system/tokens_per_sec', tokens_per_sec, iteration)
             
             tokens_seen = 0
+            time_since_log = 0.0
         
         # Evaluation
         if iteration % args.eval_interval == 0 and iteration > 0:
@@ -274,7 +271,13 @@ def main():
     parser.add_argument("--resume", type=str, default=None, help="Resume from checkpoint")
     
     # System
-    parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu")
+    if torch.cuda.is_available():
+        default_device = "cuda"
+    elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+        default_device = "mps"
+    else:
+        default_device = "cpu"
+    parser.add_argument("--device", type=str, default=default_device)
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
     
     # TensorBoard

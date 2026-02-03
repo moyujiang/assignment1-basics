@@ -14,6 +14,7 @@ from .pretokenization_example import find_chunk_boundaries
 
 # GPT-2 pretokenization regex pattern
 PATTERN = r"""'s|'t|'re|'ve|'m|'ll|'d| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
+PRETOKEN_PATTERN = re.compile(PATTERN)
 
 class BPETokenizer:
     def __init__(self, vocab: Dict[int, bytes], merges: List[Tuple[bytes, bytes]], special_tokens: List[str] | None = None):
@@ -210,6 +211,7 @@ class BPETokenizer:
     def _count_chunk(
         chunk_bytes: bytes,
         special_tokens: List[str],
+        split_pattern: str | None = None,
     ) -> Counter:
         """
         Count pre-tokens within a single chunk (bytes).
@@ -220,14 +222,15 @@ class BPETokenizer:
         
         # First: split on special tokens to isolate them
         if special_tokens:
-            split_pattern = "|".join(map(re.escape, sorted(special_tokens, key=len, reverse=True)))
+            if split_pattern is None:
+                split_pattern = "|".join(map(re.escape, sorted(special_tokens, key=len, reverse=True)))
             parts = re.split(f"({split_pattern})", text)
         else:
             parts = [text]
         
         # Second: pretokenize each part and count
         counter = Counter()
-        pat = re.compile(PATTERN)
+        pat = PRETOKEN_PATTERN
         
         for part in parts:
             if not part:
@@ -255,6 +258,7 @@ class BPETokenizer:
         vocab_size: int,
         special_tokens: List[str] | None = None,
         timings: Dict[str, float] | None = None,
+        verbose: bool = False,
     ) -> Tuple[Dict[int, bytes], List[Tuple[bytes, bytes]]]:
         """
         Train BPE on a corpus, returning vocab (id -> bytes) and merges.
@@ -266,8 +270,13 @@ class BPETokenizer:
 
         t_pretok0 = perf_counter()
 
+        special_tokens_list = special_tokens or []
+        split_pattern = None
+        if special_tokens_list:
+            split_pattern = "|".join(map(re.escape, sorted(special_tokens_list, key=len, reverse=True)))
+
         # Chunk the binary file using find_chunk_boundaries
-        split_tok = special_tokens[0].encode("utf-8") if special_tokens else b""
+        split_tok = special_tokens_list[0].encode("utf-8") if special_tokens_list else b""
         with open(input_path, "rb") as f:
             if split_tok:
                 boundaries = find_chunk_boundaries(f, desired_num_chunks=os.cpu_count() or 4, split_special_token=split_tok)
@@ -283,13 +292,29 @@ class BPETokenizer:
 
         # Parallel pre-tokenization counting per chunk
         word_freq = Counter()
-        with mp.Pool(processes=os.cpu_count() or 4) as pool:
-            for chunk_counter in pool.imap_unordered(
-                functools.partial(BPETokenizer._count_chunk, special_tokens=special_tokens or []),
-                chunks,
-                chunksize=1
-            ):
-                word_freq.update(chunk_counter)
+        total_bytes = sum(len(chunk) for chunk in chunks)
+        use_mp = (os.cpu_count() or 1) > 1 and len(chunks) > 1 and total_bytes >= 1_000_000
+        if use_mp:
+            with mp.Pool(processes=min(os.cpu_count() or 4, len(chunks))) as pool:
+                for chunk_counter in pool.imap_unordered(
+                    functools.partial(
+                        BPETokenizer._count_chunk,
+                        special_tokens=special_tokens_list,
+                        split_pattern=split_pattern,
+                    ),
+                    chunks,
+                    chunksize=1,
+                ):
+                    word_freq.update(chunk_counter)
+        else:
+            for chunk in chunks:
+                word_freq.update(
+                    BPETokenizer._count_chunk(
+                        chunk,
+                        special_tokens_list,
+                        split_pattern=split_pattern,
+                    )
+                )
 
         if timings is not None:
             timings["pretokenize_s"] = perf_counter() - t_pretok0
@@ -300,10 +325,12 @@ class BPETokenizer:
         vocab: Dict[int, bytes] = {}
         for b in range(256):
             vocab[len(vocab)] = bytes([b])
-        for sp in special_tokens or []:
+        vocab_values = set(vocab.values())
+        for sp in special_tokens_list:
             b = sp.encode("utf-8")
-            if b not in vocab.values():
+            if b not in vocab_values:
                 vocab[len(vocab)] = b
+                vocab_values.add(b)
         
         merges: List[Tuple[bytes, bytes]] = []
 
@@ -373,7 +400,8 @@ class BPETokenizer:
 
         # Iteratively merge most frequent pairs.
         while len(vocab) < vocab_size and heap:
-            print(f"Vocab size: {len(vocab)}; Heap size: {len(heap)}", end="\r")
+            if verbose:
+                print(f"Vocab size: {len(vocab)}; Heap size: {len(heap)}", end="\r")
             best_pair: Tuple[bytes, bytes] | None = None
             best_freq = 0
 
@@ -428,8 +456,9 @@ class BPETokenizer:
                     heapq.heappush(heap, _heap_key(pair, freq))
 
             # Add merged token to vocab
-            if merged_token not in set(vocab.values()):
+            if merged_token not in vocab_values:
                 vocab[len(vocab)] = merged_token
+                vocab_values.add(merged_token)
 
         if timings is not None:
             timings["train_s"] = perf_counter() - t_train0

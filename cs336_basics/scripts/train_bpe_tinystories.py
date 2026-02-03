@@ -39,6 +39,7 @@ def main():
         vocab_size=VOCAB_SIZE,
         special_tokens=SPECIAL_TOKENS,
         timings=timings,
+        verbose=True,
     )
 
     end_time = time.time()

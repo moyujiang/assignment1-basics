@@ -23,7 +23,8 @@ def cross_entropy(logits: Tensor, targets: Tensor) -> Tensor:
     sum_exp_logits = torch.sum(exp_logits, dim=-1, keepdim=True)
     log_probs = logits_stable - torch.log(sum_exp_logits)
 
-    nll_loss = -log_probs[torch.arange(targets_flat.shape[0]), targets_flat]
+    row_indices = torch.arange(targets_flat.shape[0], device=logits_flat.device)
+    nll_loss = -log_probs[row_indices, targets_flat]
     loss = torch.mean(nll_loss)
     return loss
 

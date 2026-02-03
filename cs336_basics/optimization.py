@@ -78,7 +78,7 @@ def get_lr_cosine_schedule(t: int, lr_max: float, lr_min: float, T_w: int, T_c: 
     return lr
 
 
-def gradient_clipping(parameters: Iterable[torch.nn.Parameter], max_l2_norm: float) -> None:
+def gradient_clipping(parameters: Iterable[torch.nn.Parameter], max_l2_norm: float) -> float:
     """Clip gradients by global L2 norm.
 
     Args:
@@ -99,3 +99,4 @@ def gradient_clipping(parameters: Iterable[torch.nn.Parameter], max_l2_norm: flo
     if clip_coef < 1:
         for p in params_with_grad:
             p.grad.data.mul_(clip_coef)
+    return total_norm

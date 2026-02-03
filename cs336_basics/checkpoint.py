@@ -43,5 +43,14 @@ def load_checkpoint(
     checkpoint = torch.load(src, map_location='cpu')
     model.load_state_dict(checkpoint['model_state_dict'])
     optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+    try:
+        device = next(model.parameters()).device
+    except StopIteration:
+        device = None
+    if device is not None:
+        for state in optimizer.state.values():
+            for key, value in state.items():
+                if torch.is_tensor(value):
+                    state[key] = value.to(device)
     iteration = checkpoint['iteration']
     return iteration
