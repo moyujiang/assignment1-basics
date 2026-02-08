@@ -16,17 +16,11 @@ def cross_entropy(logits: Tensor, targets: Tensor) -> Tensor:
     logits_flat = einops.rearrange(logits, "... C -> ( ... ) C")
     targets_flat = einops.rearrange(targets, "... -> ( ... )")
 
-    logits_max = torch.max(logits_flat, dim=-1, keepdim=True).values
-    logits_stable = logits_flat - logits_max
-
-    exp_logits = torch.exp(logits_stable)
-    sum_exp_logits = torch.sum(exp_logits, dim=-1, keepdim=True)
-    log_probs = logits_stable - torch.log(sum_exp_logits)
-
-    row_indices = torch.arange(targets_flat.shape[0], device=logits_flat.device)
-    nll_loss = -log_probs[row_indices, targets_flat]
-    loss = torch.mean(nll_loss)
-    return loss
+    # More memory-efficient formulation:
+    # CE = -log softmax(logits)[target] = logsumexp(logits) - logits[target]
+    log_denom = torch.logsumexp(logits_flat, dim=-1)
+    target_logits = logits_flat.gather(dim=-1, index=targets_flat.unsqueeze(-1)).squeeze(-1)
+    return (log_denom - target_logits).mean()
 
 def perplexity(logits: Tensor, targets: Tensor) -> Tensor:
     """

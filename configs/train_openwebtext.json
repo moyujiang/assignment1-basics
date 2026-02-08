@@ -1,28 +1,27 @@
 {
   "train_data": "data/tokenized/owt_train.uint16.npy",
   "val_data": "data/tokenized/owt_valid.uint16.npy",
-  "vocab_size": 10000,
+  "vocab_size": 32000,
   
-  "context_length": 512,
-  "num_layers": 12,
-  "d_model": 768,
-  "num_heads": 12,
-  "d_ff": 3072,
+  "context_length": 256,
+  "num_layers": 4,
+  "d_model": 512,
+  "num_heads": 16,
+  "d_ff": 1344,
   "rope_theta": 10000.0,
   
-  "max_lr": 3e-4,
-  "min_lr": 3e-5,
-  "weight_decay": 0.1,
+  "max_lr": 6e-4,
+  "weight_decay": 1e-2,
   "beta1": 0.9,
-  "beta2": 0.95,
+  "beta2": 0.999,
   "eps": 1e-8,
   "grad_clip": 1.0,
   
-  "batch_size": 8,
-  "max_iters": 100000,
+  "batch_size": 64,
+  "max_iters": 40000,
   "warmup_iters": 2000,
   
-  "log_interval": 10,
+  "log_interval": 100,
   "eval_interval": 1000,
   "eval_iters": 100,
   "checkpoint_dir": "checkpoints/openwebtext",
@@ -33,5 +32,5 @@
   
   "tensorboard": true,
   "tensorboard_dir": "runs/openwebtext",
-  "run_name": "owt-12L-768d"
+  "run_name": "openwebtext-4L-512d"
 }

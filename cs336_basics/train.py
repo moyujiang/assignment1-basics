@@ -21,6 +21,15 @@ except ImportError:
 
 def train(args):
     """Main training loop with periodic evaluation and checkpointing."""
+
+    def sanitize_tag(tag: str) -> str:
+        tag = tag.strip()
+        if not tag:
+            return ""
+        # Avoid accidental path injection / weird separators.
+        tag = tag.replace("/", "-").replace("\\", "-")
+        tag = "-".join(tag.split())
+        return tag
     
     # Auto-adjust checkpoint_dir and run_name to include learning rate if not already present
     def format_lr(lr):
@@ -47,6 +56,15 @@ def train(args):
         args.run_name = f"{args.run_name}_{lr_str}"
     elif not args.run_name:
         args.run_name = f"run_{lr_str}"
+
+    # Optional: user-provided tag/suffix to disambiguate experiments (e.g., ablations).
+    tag = sanitize_tag(getattr(args, "tag", ""))
+    if tag:
+        checkpoint_base = Path(args.checkpoint_dir)
+        if tag not in checkpoint_base.name:
+            args.checkpoint_dir = str(checkpoint_base.parent / f"{checkpoint_base.name}_{tag}")
+        if args.run_name and tag not in args.run_name:
+            args.run_name = f"{args.run_name}_{tag}"
     
     # Initialize TensorBoard if enabled
     tb_writer = None
@@ -84,6 +102,10 @@ def train(args):
         num_heads=args.num_heads,
         d_ff=args.d_ff,
         rope_theta=args.rope_theta,
+        use_rope=not getattr(args, "no_rope", False),
+        use_rmsnorm=not getattr(args, "no_rmsnorm", False),
+        norm_position=getattr(args, "norm_position", "pre"),
+        ffn_type=getattr(args, "ffn_type", "swiglu"),
     ).to(device)
     
     num_params = sum(p.numel() for p in model.parameters())
@@ -247,6 +269,30 @@ def main():
     parser.add_argument("--num-heads", type=int, default=12, help="Number of attention heads")
     parser.add_argument("--d-ff", type=int, default=3072, help="FFN hidden dimension")
     parser.add_argument("--rope-theta", type=float, default=10000.0, help="RoPE theta parameter")
+    parser.add_argument(
+        "--no-rope",
+        action="store_true",
+        help="Disable RoPE entirely (NoPE).",
+    )
+    parser.add_argument(
+        "--no-rmsnorm",
+        action="store_true",
+        help="Disable RMSNorm (replace normalization layers with identity).",
+    )
+    parser.add_argument(
+        "--norm-position",
+        type=str,
+        choices=["pre", "post"],
+        default="pre",
+        help="Transformer block norm placement: pre-norm (default) or post-norm.",
+    )
+    parser.add_argument(
+        "--ffn-type",
+        type=str,
+        choices=["swiglu", "silu"],
+        default="swiglu",
+        help="FFN variant: SwiGLU (default) or SiLU FFN.",
+    )
     
     # Optimizer
     parser.add_argument("--max-lr", type=float, default=3e-4, help="Maximum learning rate")
@@ -269,6 +315,12 @@ def main():
     parser.add_argument("--checkpoint-dir", type=str, default="checkpoints", help="Checkpoint directory")
     parser.add_argument("--checkpoint-interval", type=int, default=5000, help="Save checkpoint every N iters")
     parser.add_argument("--resume", type=str, default=None, help="Resume from checkpoint")
+    parser.add_argument(
+        "--tag",
+        type=str,
+        default="",
+        help="Optional suffix tag appended to run_name/checkpoint_dir (useful for ablations).",
+    )
     
     # System
     if torch.cuda.is_available():

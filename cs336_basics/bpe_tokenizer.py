@@ -3,6 +3,7 @@ Implement BPE tokenizer
 """
 
 import os
+import json
 import regex as re
 import multiprocessing as mp
 import functools
@@ -470,6 +471,7 @@ class BPETokenizer:
         vocab, merges = cls.train_bpe(input_path, vocab_size, special_tokens)
         return cls(vocab, merges, special_tokens)
 
+    @classmethod
     def from_files(cls, vocab_filepath: str, merge_filepath: str, special_tokens: List[str] | None = None) -> "BPETokenizer":
         """
         Load BPE tokenizer from vocab and merges files.
