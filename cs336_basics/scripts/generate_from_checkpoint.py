@@ -20,11 +20,11 @@ from pathlib import Path
 
 import torch
 
-from cs336_basics.bpe_tokenizer import BPETokenizer
-from cs336_basics.transformer import TransformerLM
-from cs336_basics.generate import generate
-from cs336_basics.checkpoint import load_checkpoint
-from cs336_basics.optimization import AdamW
+from cs336_basics.tokenization.bpe_tokenizer import BPETokenizer
+from cs336_basics.nn.transformer import TransformerLM
+from cs336_basics.inference.generate import generate
+from cs336_basics.training.checkpoint import load_checkpoint
+from cs336_basics.training.optimization import AdamW
 
 
 def build_argparser() -> argparse.ArgumentParser:

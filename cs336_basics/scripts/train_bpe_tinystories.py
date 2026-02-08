@@ -7,7 +7,7 @@ import json
 import time
 import tracemalloc
 from pathlib import Path
-from cs336_basics.bpe_tokenizer import BPETokenizer
+from cs336_basics.tokenization.bpe_tokenizer import BPETokenizer
 
 
 def main():

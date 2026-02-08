@@ -14,7 +14,7 @@ from time import perf_counter
 from pathlib import Path
 from typing import Iterator, Iterable
 
-from cs336_basics.bpe_tokenizer import BPETokenizer
+from cs336_basics.tokenization.bpe_tokenizer import BPETokenizer
 
 
 BYTES_LITERAL_RE = re.compile(r"b'(?:\\.|[^'])*'|b\"(?:\\.|[^\"])*\"")
