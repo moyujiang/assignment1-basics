@@ -444,3 +444,161 @@ lr = 1e1 时 loss 缓慢稳定下降；lr = 1e2 时 loss 迅速收敛到 0；lr 
 
 
 
+## batch_size_experiment
+
+![](img5.png)
+
+在 lr=6e-4 固定 且 总 token 相同 的条件下，batch 越小最终 loss 越低：bs16 最好（≈1.326），随后 bs32（≈1.355）、bs64（≈1.373）、bs128 最差（≈1.413）。
+
+解释：小 batch 的梯度噪声更大，起到一定“隐式正则化/探索”作用，给定相同 token 预算时更容易找到更好的解；而大 batch 梯度更平滑、更确定，但在同一学习率下往往需要 更大的 lr（或不同 lr schedule/warmup） 才能达到同等优化效率，否则会收敛到更差的点。
+
+结论：大 batch 并不一定更差，但需要重新调参（尤其 lr）；在当前 lr 下，小 batch 更占优。
+
+
+
+## generate
+
+```
+temperature=0.95 top_p=0.1 max_new_tokens=256 stop_on_eos=False seed=0
+prompt_tokens: 17
+total_tokens: 273
+new_tokens: 256
+---TEXT_START---
+Once upon a time, he was so excited to see the surprise. 
+When he arrived at the park, he saw a big, colorful slide. He was so excited and he ran to it. He climbed up the slide and slid down with a big smile on his face. 
+He had so much fun sliding down the slide. He was so happy that he had found the surprise of the slide. He couldn't wait to go back again!
+<|endoftext|>
+Once upon a time, there was a little girl named Lily. She had a big, red ball that she loved to play with. One day, she went to the park with her mom and her ball.
+At the park, Lily saw a boy named Tim. Tim was sad because he lost his toy. Lily wanted to help Tim find his toy. They looked under the slide, behind the swings, and in the sandbox.
+Finally, they found the toy near the swings. Tim was so happy! He said, "Thank you, Lily!" They played together and had lots of fun. From that day on, Lily and Tim became best friends.
+<|endoftext|>
+Once upon a time, there was a little girl named Lily. She loved to play with her toys and eat yummy food. One day, she found
+---TEXT_END---
+```
+
+文字可读性较高，用词多见于 TinyStories 数据集中出现的简单单词，单个故事长短也很接近；调高 temperature、调低 top-p 之后故事连贯性提升，但倾向于输出基本一样的故事（观察第二段故事的开头）。
+
+
+
+
+
+## layer_norm_ablation
+
+(a)
+
+![](img2.png)
+
+去掉 RMSNorm 后，用之前的最优学习率（5e-3）训练会直接数值发散到 NaN；降低学习率可以恢复训练，但需要显著减小（例如 1e-3 仍会出现大幅震荡，5e-4 才相对稳定）。总体上，RMSNorm 提供了尺度/梯度的稳定化，使模型能在更大的学习率下稳定训练并更顺畅地收敛；移除后训练对学习率更敏感、更容易出现 loss 爆炸，且在稳定设置下往往收敛更慢或最终效果更差。
+
+
+
+## no_pos_emb
+
+![](img3.png)
+
+NoPE（去掉 RoPE/不加位置编码）：训练仍然稳定收敛，但最终 `train/loss_smoothed` 明显变差。具体在 step=9900：lr=1e-3 时 1.4337 vs 1.3679，lr=5e-3 时 1.388 vs 1.3166。结论是 causal mask 虽能让模型学到部分顺序信息，但缺少显式位置编码会降低位置对齐与长程建模能力，导致性能上限下降。
+
+
+
+## swiglu_ablation
+
+![](img4.png)
+
+SiLU（把 SwiGLU 换成 SiLU）消融结果：训练过程稳定但性能退化。在 step=9900，`lr=1e-3` 时 1.412 vs 1.3679（↑0.044），`lr=5e-3` 时 1.3438 vs 1.3166（↑0.027）。结论：SwiGLU 在相同计算/超参下更“表达力强”（门控带来更好的特征选择与非线性），而纯 SiLU 的 FFN 容量与动态性更弱，因此最终 loss 更高。
+
+
+
+
+
+## main_experiment
+
+![](img6.png)
+
+训练的总 token 数是 tinystories 的两倍，生成的文本效果不佳：
+
+```
+================================================================================
+OWT Generation
+================================================================================
+device:      cuda
+checkpoint:  checkpoints/owt_checkpoint_final.pt
+iteration:   40000
+config:      configs/train_openwebtext.json
+tokenizer:   cs336_basics/tokenizer_output_owt
+temperature=0.9 top_p=0.95 max_new_tokens=256 stop_on_eos=False seed=0 num_samples=4
+================================================================================
+
+---SAMPLE 1/4---
+prompt_tokens: 22 | total_tokens: 278 | new_tokens: 256
+The meaning of life is pærnåre.
+
+. Bår det förket ider som en gruffårst på eventgensningerfägstä.
+
+. Vå att
+
+. Hänokalät med krystittare på hågon så va en gruffårng i öffør stårtsändet som bøgårjes. " Eider skatkaden utgyrligä samlet har spiktet den. Kötiger enjedade sande vont åbrot.
+
+» Mengen, och betår. Eider kvilla at öfførter så krystårtler Fraikkemple della dalle. Sustre sigurden Facebook det net. Maltser av mobli föraanskket, vär redige relativarna utr, un uppår kostas täds med skitälla. Gesigen öffjen nostar omkslarligdatt, kredskittade
+
+---SAMPLE 2/4---
+prompt_tokens: 22 | total_tokens: 278 | new_tokens: 256
+The meaning of life isuper ia.
+
+Then, you can look up all the ancient hands on the stone.
+
+In high school,
+
+They will learn English in ancient and read Finnish as the name.
+
+But I like it!
+
+Everywhere I see it and feel other ways that something strange is different from what some people have been saying.
+
+So what are you dreaming about?
+
+Looking down to the tree, we are as
+
+secondary
+
+A lot of people might think they had in the flower.
+
+But do you think that the flower would make the flower?
+
+Nowhere in coffee is this mind of the trees. So, a lot of people have felt an affinity for flowers, in the painting. So, here it is, it's another strange shade.
+
+So, do you ever see a flower?
+
+Gnit must have a flower in the flower. And a smile.
+
+But all of that, when it's on the flower, there is a lot of flowers.
+
+They're just amazing.
+
+And, I said, that's the more people there are.
+
+I just want to go back to the Silvermont.
+
+Here we have some
+
+---SAMPLE 3/4---
+prompt_tokens: 22 | total_tokens: 278 | new_tokens: 256
+The meaning of life ischrexe: gvstv) etrato nt personet, varefractile, his) dalem dif, his) zà, pi, karyu viš ie biovsyta kandu ni llt, fjudiši ne kanskation,/o ali, sin je njen vada po, prok tnrt i nejpma Ček Pérez
+
+Provor Junction’s ali, tvljiv lištomen lvljiv kanjuju nekvamo, kobese je zelo. Ude menovi predrucer, drova višlj. VADAÍc o posti ovu, nekvrstvce. CRC lvljih razu hu zukk pela toke, nei deks uma svijen toke. Kazodomovan.
+
+Ude 2014 morajan narbati. Nada koji njen sevlj. Ijjci zažg nogihe, m
+
+---SAMPLE 4/4---
+prompt_tokens: 22 | total_tokens: 278 | new_tokens: 256
+The meaning of life is ) vi e cedar vje l ka ha iettaem er lang sjon ʿnda /svular ɻt, dag ka pu ll sdkl.
+
+Tart neptam umaleo vieneale, doble che i glatadmma scrca i juj.
+
+Tart neli ikinausu,o "~" suisenih i mosma apze-juje...
+
+Tart nelia opi ikina så deade ile ha tid ort sen valom er et could å mjörning om får deveka opposom upp iptam minaj motwe.
+
+Compati tard nell to okls, så lymare i met i samolåg ess näl jakkans i lang, ka ho sowan, svåra, ka- sommen uppleh ha fær prät och finag trår mijnfentem i når näl går har våra nå
+```
+
+尽管总训练 token 达到 TinyStories 的两倍，但在更复杂、更高熵的 OpenWebText 上，同等模型规模与训练设置下仍可能欠训练，导致生成结果出现多语混杂与乱码。高温采样（temperature=0.9, top_p=0.95）会进一步放大模型不成熟时对尾部稀有 token 的采样，从而恶化可读性；此外，OWT 的噪声与 tokenizer/清洗策略也会显著影响生成质量。建议用更保守的采样（更低 temperature/top_p 或 greedy）验证模型能力，并在必要时增加训练预算/调整学习率与数据清洗来改善生成。
